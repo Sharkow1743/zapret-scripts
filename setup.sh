@@ -245,7 +245,7 @@ fi
 
 # Скачиваем бинарники TLS в папку fake
 FAKE_BIN_DIR="/opt/zapret/files/fake"
-GITHUB_BIN_URL="https://github.com/Flowseal/zapret-discord-youtube/raw/refs/heads/main/bin"
+GITHUB_BIN_URL="https://github.com/Sharkow1743/zapret-scripts/raw/refs/heads/main/bin"
 
 # Массив бинарников для скачивания
 declare -a BINARIES=(
