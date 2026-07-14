@@ -136,10 +136,9 @@ else
   fi
 fi
 
-# Создаем временную директорию, если она не существует
+# Полное пересоздание временной директории во избежание ошибок раскрытия маски '*'
+rm -rf "$HOME/tmp"
 mkdir -p "$HOME/tmp"
-# Удаление архива с запретом на всякий
-rm -rf -- "$HOME/tmp"/*
 
 # Бэкап запрета если есть
 if [ -d "/opt/zapret" ]; then
@@ -194,7 +193,7 @@ if ! tar -xvf "$HOME/tmp/zapret-$ZAPRET_VERSION.tar.gz" -C "$HOME/tmp"; then
 fi
 
 # Версия без 'v' в начале для работы с директорией
-ZAPRET_DIR_VERSION=$(echo $ZAPRET_VERSION | sed 's/^v//')
+ZAPRET_DIR_VERSION=$(echo "$ZAPRET_VERSION" | sed 's/^v//')
 echo "Определение пути распакованного архива..."
 
 if [ -d "$HOME/tmp/zapret-$ZAPRET_DIR_VERSION" ]; then
@@ -233,21 +232,27 @@ $ELEVATE_CMD chown -R "$TARGET_USER:$TARGET_GROUP" /opt/zapret
 $ELEVATE_CMD chmod -R u+rwX,go+rX /opt/zapret
 $ELEVATE_CMD find /opt/zapret -type d -exec chmod g+s {} \;
 
+# Очистка старой директории перед клонированием для предотвращения ошибок Git
+if [ -d "$HOME/zapret-configs" ]; then
+  echo "Удаление существующей папки с конфигами..."
+  rm -rf "$HOME/zapret-configs"
+fi
+
 # Клонирование репозитория с конфигами
 echo "Клонирование репозитория с конфигами..."
 if ! git clone https://github.com/Sharkow1743/zapret-scripts.git "$HOME/zapret-configs"; then
-  rm -rf -- "$HOME/zapret-configs"
-  if ! git clone https://github.com/Sharkow1743/zapret-scripts.git "$HOME/zapret-configs"; then
-    echo "Ошибка: не удалось клонировать репозиторий с конфигами."
+  echo "Ошибка: не удалось клонировать репозиторий с конфигами."
   exit 1
-  fi
 fi
 
-# Скачиваем бинарники TLS в папку fake
+# Копируем бинарники TLS из папки bin склонированного репозитория
 FAKE_BIN_DIR="/opt/zapret/files/fake"
-GITHUB_BIN_URL="https://github.com/Sharkow1743/zapret-scripts/raw/refs/heads/main/bin"
+LOCAL_BIN_DIR="$HOME/zapret-configs/bin"
 
-# Массив бинарников для скачивания
+# Убедимся, что директория для фейковых TLS пакетов существует
+mkdir -p "$FAKE_BIN_DIR"
+
+# Массив бинарников для переноса
 declare -a BINARIES=(
   "tls_clienthello_4pda_to.bin"
   "tls_clienthello_max_ru.bin"
@@ -255,20 +260,30 @@ declare -a BINARIES=(
   "quic_initial_dbankcloud_ru.bin"
 )
 
-echo "Скачивание бинарников TLS..."
+echo "Копирование бинарников TLS из локального репозитория..."
 for BINARY in "${BINARIES[@]}"; do
+  SRC="$LOCAL_BIN_DIR/$BINARY"
   DEST="$FAKE_BIN_DIR/$BINARY"
-  URL="$GITHUB_BIN_URL/$BINARY"
   
-  if [ ! -f "$DEST" ]; then
-    echo "Скачивание $BINARY..."
-    if ! wget -q -O "$DEST" "$URL"; then
-      echo "Ошибка: не удалось скачать $BINARY с $URL"
+  if [ -f "$SRC" ]; then
+    echo "Копирование $BINARY..."
+    if cp "$SRC" "$DEST"; then
+      echo "$BINARY успешно скопирован"
+    else
+      echo "Ошибка: не удалось скопировать $BINARY в $DEST"
       exit 1
     fi
-    echo "$BINARY успешно скачан"
   else
-    echo "$BINARY уже существует, пропускаем"
+    # Резервный вариант, если в склонированной папке почему-то нет файла
+    echo "Предупреждение: $BINARY не найден локально в $LOCAL_BIN_DIR."
+    echo "Попытка скачать $BINARY по сети..."
+    URL="https://github.com/Sharkow1743/zapret-scripts/raw/refs/heads/main/bin/$BINARY"
+    if wget -q -O "$DEST" "$URL"; then
+      echo "$BINARY успешно скачан"
+    else
+      echo "Ошибка: не удалось скопировать или скачать $BINARY."
+      exit 1
+    fi
   fi
 done
 
@@ -351,14 +366,14 @@ setup_shell_shortcuts() {
   # вывод сообщений в терминал
   if [ $alias_config_added -eq 1 ] || [ $alias_switch_added -eq 1 ]; then
     echo "Alias добавлены в $shell_config"
-    echo "Активирую alias..."
-    source "$shell_config"
-    echo "Готово! Теперь доступны команды:"
+    echo "⚠ Чтобы использовать alias в текущей сессии терминала, выполните:"
+    echo "  source $shell_config"
+    echo "Либо просто перезапустите терминал."
+    echo "Доступные команды:"
     echo "zapret-config - конфигуратор стратегий"
-    echo "zapret-utils - управлением zapret"
+    echo "zapret-utils - управление zapret"
   else
     echo "Alias уже добавлены в $shell_config"
-    source "$shell_config"
   fi
 }
 
